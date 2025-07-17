@@ -4,7 +4,8 @@ from core.annotations_presets import beautiful_line
 FIELD_TYPES = {
     "Casella di selezione": "CS",
     "Campo testo": "TE",
-    "Annotazione": "AN"
+    "Annotazione": "AN",
+    "Data": "DA"
 }
 
 
@@ -23,6 +24,9 @@ class FormField:
         self.annotation = annotation
         self.hypersic_module = hypersic_module
         self.linked_field = linked_field
+
+        if code.startswith("FL"):
+            self.data_type = "CS"
 
     def to_dict(self):
         return {
@@ -126,19 +130,20 @@ class FormDocument:
                 hypersic_module=row.get("MODULO_HYPERSIC", ""),
                 linked_field=row.get("LINKED_FIELD", "")
             )
-            self.add_field(field)
             if isinstance(field.classification, int) and field.classification > 0:
                 self.classification = field.classification
+                print(self.classification)
+            self.add_field(field)
         self._refresh()
 
     def __len__(self):
         return len(self.fields)
 
     def _refresh(self):
-        codes = [field.code for field in self.fields]
         for n, field in enumerate(self.fields):
             field.order = n * 100
             field.classification = self.classification
+            codes = [field.code for field in self.fields]
             while field.code in codes[0:n]:
                 field.code += "*"
 

@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QTableWidget, QAbstractItemView
 from PyQt6.QtGui import QDropEvent, QDragMoveEvent, QDragEnterEvent, QCursor
 from PyQt6.QtCore import Qt, QMimeData, QDataStream, QIODevice, QPoint
 from PyQt6.QtWidgets import QAbstractItemView
+from PySide6.QtGui import QKeyEvent
 
 from core.model import FIELD_TYPES
 
@@ -14,6 +15,12 @@ class DraggableTableWidget(QTableWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Escape:
+            self.clearSelection()
+        else:
+            super().keyPressEvent(event)
 
     def dropEvent(self, event: QDropEvent):
         # Allow only internal drags (from this table)

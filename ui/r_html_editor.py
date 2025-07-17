@@ -6,6 +6,7 @@ from PyQt6.QtGui import (
     QTextCharFormat, QTextCursor, QFont, QKeySequence, QColor, QAction
 )
 from PyQt6.QtCore import Qt
+import re
 
 
 class RichTextEditorDialog(QDialog):
@@ -35,25 +36,28 @@ class RichTextEditorDialog(QDialog):
         self.toolbar.addWidget(self.size_combo)
 
         # Bold
-        bold_action = QAction("Grassetto", self)
-        bold_action.setShortcut(QKeySequence("Ctrl+G"))
-        bold_action.triggered.connect(self.toggle_bold)
-        self.toolbar.addAction(bold_action)
-        self.addAction(bold_action)
+        self.bold_action = QAction("Grassetto", self)
+        self.bold_action.setShortcut(QKeySequence("Ctrl+G"))
+        self.bold_action.setCheckable(True)
+        self.bold_action.triggered.connect(self.toggle_bold)
+        self.toolbar.addAction(self.bold_action)
+        self.addAction(self.bold_action)
 
         # Italic
-        italic_action = QAction("Corsivo", self)
-        italic_action.setShortcut(QKeySequence("Ctrl+I"))
-        italic_action.triggered.connect(self.toggle_italic)
-        self.toolbar.addAction(italic_action)
-        self.addAction(italic_action)
+        self.italic_action = QAction("Corsivo", self)
+        self.italic_action.setShortcut(QKeySequence("Ctrl+I"))
+        self.italic_action.setCheckable(True)
+        self.italic_action.triggered.connect(self.toggle_italic)
+        self.toolbar.addAction(self.italic_action)
+        self.addAction(self.italic_action)
 
         # Underline
-        underline_action = QAction("Sottolinea", self)
-        underline_action.setShortcut(QKeySequence("Ctrl+S"))
-        underline_action.triggered.connect(self.toggle_underline)
-        self.toolbar.addAction(underline_action)
-        self.addAction(underline_action)
+        self.underline_action = QAction("Sottolinea", self)
+        self.underline_action.setShortcut(QKeySequence("Ctrl+S"))
+        self.underline_action.setCheckable(True)
+        self.underline_action.triggered.connect(self.toggle_underline)
+        self.toolbar.addAction(self.underline_action)
+        self.addAction(self.underline_action)
 
         # Text color
         color_action = QAction("Color", self)
@@ -77,51 +81,94 @@ class RichTextEditorDialog(QDialog):
 
         self.setLayout(layout)
 
-    def _merge_format_on_selection(self, callback):
+        self.text_edit.cursorPositionChanged.connect(self.update_format_buttons)
+
+    def _apply_char_format(self, fmt: QTextCharFormat):
         cursor = self.text_edit.textCursor()
-        if not cursor.hasSelection():
-            cursor.select(QTextCursor.SelectionType.WordUnderCursor)
-        fmt = cursor.charFormat()
-        callback(fmt)
-        cursor.mergeCharFormat(fmt)
-        self.text_edit.mergeCurrentCharFormat(fmt)
+        if cursor.hasSelection():
+            cursor.mergeCharFormat(fmt)
+        else:
+            self.text_edit.setCurrentCharFormat(fmt)
+
+    def update_format_buttons(self):
+        fmt = self.text_edit.currentCharFormat()
+
+        # Aggiorna gli stati dei pulsanti toggle
+        self.bold_action.setChecked(fmt.fontWeight() > QFont.Weight.Normal)
+        self.italic_action.setChecked(fmt.fontItalic())
+        self.underline_action.setChecked(fmt.fontUnderline())
+
+        # Aggiorna la combo della dimensione del font
+        point_size = fmt.fontPointSize()
+        if point_size <= 0:
+            point_size = fmt.font().pointSize()
+
+        if point_size > 0:
+            size_str = str(int(point_size))
+            if self.size_combo.currentText() != size_str:
+                self.size_combo.blockSignals(True)
+                self.size_combo.setCurrentText(size_str)
+                self.size_combo.blockSignals(False)
+
 
     def toggle_bold(self):
-        def callback(fmt):
-            weight = fmt.fontWeight()
-            fmt.setFontWeight(QFont.Weight.Normal if weight > QFont.Weight.Normal else QFont.Weight.Bold)
-        self._merge_format_on_selection(callback)
+        cursor = self.text_edit.textCursor()
+        current_fmt = cursor.charFormat() if cursor.hasSelection() else self.text_edit.currentCharFormat()
+        new_weight = QFont.Weight.Normal if current_fmt.fontWeight() > QFont.Weight.Normal else QFont.Weight.Bold
+
+        fmt = QTextCharFormat()
+        fmt.setFontWeight(new_weight)
+        self._apply_char_format(fmt)
+        self.bold_action.setChecked(new_weight > QFont.Weight.Normal)
 
     def toggle_italic(self):
-        def callback(fmt):
-            fmt.setFontItalic(not fmt.fontItalic())
-        self._merge_format_on_selection(callback)
+        cursor = self.text_edit.textCursor()
+        current_fmt = cursor.charFormat() if cursor.hasSelection() else self.text_edit.currentCharFormat()
+        new_italic = not current_fmt.fontItalic()
+
+        fmt = QTextCharFormat()
+        fmt.setFontItalic(new_italic)
+        self._apply_char_format(fmt)
+        self.italic_action.setChecked(new_italic)
 
     def toggle_underline(self):
-        def callback(fmt):
-            fmt.setFontUnderline(not fmt.fontUnderline())
-        self._merge_format_on_selection(callback)
+        cursor = self.text_edit.textCursor()
+        current_fmt = cursor.charFormat() if cursor.hasSelection() else self.text_edit.currentCharFormat()
+        new_underline = not current_fmt.fontUnderline()
+
+        fmt = QTextCharFormat()
+        fmt.setFontUnderline(new_underline)
+        self._apply_char_format(fmt)
+        self.underline_action.setChecked(new_underline)
 
     def set_font_family(self, font):
-        def callback(fmt):
-            fmt.setFontFamily(font.family())
-        self._merge_format_on_selection(callback)
+        fmt = QTextCharFormat()
+        fmt.setFontFamily(font.family())
+        self._apply_char_format(fmt)
 
     def set_font_size(self, size_str):
         try:
             size = int(size_str)
         except ValueError:
             return
-        def callback(fmt):
-            fmt.setFontPointSize(size)
-        self._merge_format_on_selection(callback)
+        fmt = QTextCharFormat()
+        fmt.setFontPointSize(size)
+        self._apply_char_format(fmt)
 
     def set_text_color(self):
         color = QColorDialog.getColor()
         if color.isValid():
-            def callback(fmt):
-                fmt.setForeground(color)
-            self._merge_format_on_selection(callback)
+            fmt = QTextCharFormat()
+            fmt.setForeground(color)
+            self._apply_char_format(fmt)
 
     def get_html(self):
-        return self.text_edit.toHtml()
+        # return self.text_edit.toHtml()
+        return self.get_html_fragment()
+
+    def get_html_fragment(self):
+        full_html = self.text_edit.toHtml()
+        match = re.search(r'<body[^>]*>(.*?)</body>', full_html, re.DOTALL | re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return full_html  # fallback, nel caso non trovi il body

@@ -9,6 +9,8 @@ from PyQt6.QtWidgets import (
     QTextEdit, QPushButton, QLabel, QAbstractItemView, QInputDialog, QHeaderView
 )
 
+from PyQt6.QtGui import QKeyEvent
+
 from core.excel_io import load_excel_file, save_excel_file
 from core.model import FormDocument, FormField, FIELD_TYPES
 from ui.widgets import DraggableTableWidget
@@ -34,13 +36,15 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
 
-        load_action = QAction("Apri file Excel", self)
-        load_action.triggered.connect(self.load_file)
-        file_menu.addAction(load_action)
+        self.load_action = QAction("Apri file Excel", self)
+        self.load_action.setShortcut(QKeySequence("Ctrl+O"))
+        self.load_action.triggered.connect(self.load_file)
+        file_menu.addAction(self.load_action)
 
-        export_action = QAction("Salva file Excel", self)
-        export_action.triggered.connect(self.export_file)
-        file_menu.addAction(export_action)
+        self.export_action = QAction("Salva file Excel", self)
+        self.export_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self.export_action.triggered.connect(self.export_file)
+        file_menu.addAction(self.export_action)
 
         # Menu bar add
         add_menu = menubar.addMenu("Aggiungi")
@@ -70,6 +74,8 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(
             ["Codice", "Tipologia", "Descrizione", "Raggruppamento", "Campo obbligatorio", "Dati di default"])
@@ -95,7 +101,7 @@ class MainWindow(QMainWindow):
         self._drag_allowed = False
 
     def insert_existing_field_at(self, row, field: FormField):
-        self.document.fields.insert(row, field)
+        self.document.add_field(field=field, position=row)
         self.refresh_table()
 
     def copy_group(self, indexes):
@@ -153,7 +159,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", str(e))
 
     def export_file(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Salva file Excel Dati Specifici", "", "Excel Files (*.xls)")
+        path, _ = QFileDialog.getSaveFileName(self, "Salva file Excel Dati Specifici", "", "Excel Files (*.xlsx)")
         if path:
             try:
                 save_excel_file(path, self.document)
