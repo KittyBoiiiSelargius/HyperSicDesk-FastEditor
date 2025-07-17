@@ -14,6 +14,7 @@ from core.model import FormDocument, FormField, FIELD_TYPES
 from ui.widgets import DraggableTableWidget
 from ui.r_html_editor import RichTextEditorDialog
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -21,7 +22,7 @@ class MainWindow(QMainWindow):
         self._copied_group = None
         self._copied_default_data = None
 
-        self.setWindowTitle("Form Editor")
+        self.setWindowTitle("Hypersic Online Form Editor")
         self.resize(1300, 800)
 
         self.document = FormDocument()
@@ -152,7 +153,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", str(e))
 
     def export_file(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Salva file Excel Dati Specifici", "", "Excel Files (*.xlsx)")
+        path, _ = QFileDialog.getSaveFileName(self, "Salva file Excel Dati Specifici", "", "Excel Files (*.xls)")
         if path:
             try:
                 save_excel_file(path, self.document)
@@ -287,7 +288,7 @@ class MainWindow(QMainWindow):
         copy_group_action.triggered.connect(lambda: self.copy_group(indexes))
         menu.addAction(copy_group_action)
 
-        copy_default_data_action = QAction("Copia default_data", self)
+        copy_default_data_action = QAction("Copia dati di default", self)
         copy_default_data_action.triggered.connect(lambda: self.copy_default_data(indexes))
         menu.addAction(copy_default_data_action)
 
@@ -357,25 +358,10 @@ class MainWindow(QMainWindow):
         )
 
         if ok:
-            new_field = FormField(
-                code="NEW_CODE",
-                data_type="AN",
-                description="",
-                group=None,
-                mandatory=False,
-                default_data=""
-            )
-            self.document.fields.insert(index, new_field)
+            new_field = FormField.create_empty()
+            self.document.add_field(field=new_field, position=index)
             self.refresh_table()
 
     def insert_field_b(self):
-        self.document.add_field(FormField(
-            code="CODE",
-            data_type="AN",
-            description="",
-            group=None,
-            mandatory=False,
-            default_data=""
-        ), len(self.document))
+        self.document.add_field(FormField.create_empty(), len(self.document))
         self.refresh_table()
-
