@@ -50,7 +50,11 @@ class FormField:
             description=self.description,
             mandatory=self.mandatory,
             group=self.group,
-            default_data=self.default_data
+            default_data=self.default_data,
+            classification=self.classification,
+            annotation=self.annotation,
+            linked_field=self.linked_field,
+            hypersic_module=self.hypersic_module
         )
 
     def __str__(self):
@@ -83,6 +87,12 @@ class FormDocument:
             result += str(n) + str(i) + "\n"
         return result
 
+    def copy(self):
+        cp = FormDocument()
+        cp.classification = self.classification
+        cp.fields = [field.copy() for field in self.fields]
+        return cp
+
     def add_field(self, field: FormField, position=None):
         if position is None:
             self.fields.append(field)
@@ -93,6 +103,11 @@ class FormDocument:
     def remove_field(self, index: int):
         if 0 <= index < len(self.fields):
             del self.fields[index]
+        self._refresh()
+
+    def swap_field(self, index_1, index_2):
+        if 0 <= index_1 < len(self.fields) and 0 <= index_2 < len(self.fields):
+            self.fields[index_1], self.fields[index_2] = self.fields[index_2], self.fields[index_1]
         self._refresh()
 
     def update_group(self, indexes: list[int], group_value: str):
@@ -132,7 +147,6 @@ class FormDocument:
             )
             if isinstance(field.classification, int) and field.classification > 0:
                 self.classification = field.classification
-                print(self.classification)
             self.add_field(field)
         self._refresh()
 

@@ -1,7 +1,6 @@
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 from PyQt6.QtGui import QDropEvent
 
-
 from PyQt6.QtWidgets import QTableWidget, QAbstractItemView
 from PyQt6.QtGui import QDropEvent, QDragMoveEvent, QDragEnterEvent, QCursor
 from PyQt6.QtCore import Qt, QMimeData, QDataStream, QIODevice, QPoint
@@ -15,12 +14,6 @@ class DraggableTableWidget(QTableWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
-
-    def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key.Key_Escape:
-            self.clearSelection()
-        else:
-            super().keyPressEvent(event)
 
     def dropEvent(self, event: QDropEvent):
         # Allow only internal drags (from this table)
@@ -62,7 +55,6 @@ class DraggableTableWidget(QTableWidget):
         indicator = self.dropIndicatorPosition()
         print(indicator)
         if indicator == QAbstractItemView.DropIndicatorPosition.OnItem:
-            print("ON ITEM!!!!")
             event.ignore()
             return
 
@@ -72,9 +64,52 @@ class DraggableTableWidget(QTableWidget):
         if self.parent_window:
             self.parent_window.sync_table_to_model()
 
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Escape:
+            self.clearSelection()
+            return
+
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_Up:
+                self.move_selected_rows(-1)
+                return
+            elif event.key() == Qt.Key.Key_Down:
+                self.move_selected_rows(1)
+                return
+
+        super().keyPressEvent(event)
+
+    def move_selected_rows(self, direction: int):
+        indexes = self.selectedIndexes()
+        rows = sorted(set(i.row() for i in indexes))
+        new_rows = [r + direction for r in rows]
+        if not rows:
+            return
+
+        if (direction == -1 and rows[0] == 0) or (direction == 1 and rows[-1] == self.rowCount() - 1):
+            return
+
+        for row in (rows if direction == 1 else reversed(rows)):
+            self.swap_rows(row, row + direction)
+
+        self.clearSelection()
+
+        current_row = indexes[0].row()
+        new_row = current_row + direction
+
+        for row in new_rows:
+            if 0 <= row < self.rowCount():
+                for col in range(self.columnCount()):
+                    item = self.item(row, col)
+                    if item:  # Evita None
+                        item.setSelected(True)
+
+        self.setCurrentCell(new_row, 0)
+
+    def swap_rows(self, row1, row2):
+        self.parent_window.swap_rows(row1, row2)
+
     def leaveEvent(self, event):
         # Reset cursor when leaving the widget
         self.setCursor(Qt.CursorShape.ArrowCursor)
         super().leaveEvent(event)
-
-

@@ -32,6 +32,12 @@ class MainWindow(QMainWindow):
         self._copied_fields: list[FormField] = []
         self._custom_field_factory = None
 
+        self._cut_fields = []
+        self._cut_origin_rows = []
+
+        self.undo_stack = []
+        self.redo_stack = []
+
         # Menu bar
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
@@ -62,6 +68,50 @@ class MainWindow(QMainWindow):
         add_menu.addAction(self.add_field_action_b)
 
         self.add_field_action_b.setEnabled(False)
+
+        # Menu Modifica
+        edit_menu = menubar.addMenu("Modifica")
+
+        self.copy_action = QAction("Copia", self)
+        self.copy_action.setShortcut(QKeySequence("Ctrl+C"))
+        self.copy_action.triggered.connect(self.trigger_copy)
+        edit_menu.addAction(self.copy_action)
+
+        self.cut_action = QAction("Taglia", self)
+        self.cut_action.setShortcut(QKeySequence("Ctrl+X"))
+        self.cut_action.triggered.connect(self.trigger_cut)
+        edit_menu.addAction(self.cut_action)
+
+        self.paste_action = QAction("Incolla", self)
+        self.paste_action.setShortcut(QKeySequence("Ctrl+V"))
+        self.paste_action.triggered.connect(self.trigger_paste)
+        edit_menu.addAction(self.paste_action)
+
+        self.assign_group_action = QAction("Assegna a gruppo", self)
+        self.assign_group_action.triggered.connect(
+            lambda: self.assign_group_dialog(self.table.selectionModel().selectedRows()))
+        edit_menu.addAction(self.assign_group_action)
+
+        self.toggle_mandatory_action = QAction("Abilita/disabilita obbligatorietà", self)
+        self.toggle_mandatory_action.triggered.connect(
+            lambda: self.toggle_mandatory(self.table.selectionModel().selectedRows()))
+        edit_menu.addAction(self.toggle_mandatory_action)
+
+        self.delete_action = QAction("Elimina", self)
+        self.delete_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
+        self.delete_action.triggered.connect(
+            lambda: self.delete_rows(self.table.selectionModel().selectedRows()))
+        edit_menu.addAction(self.delete_action)
+
+        self.undo_action = QAction("Annulla", self)
+        self.undo_action.setShortcut(QKeySequence("Ctrl+Z"))
+        self.undo_action.triggered.connect(self.undo)
+        edit_menu.addAction(self.undo_action)
+
+        self.redo_action = QAction("Ripeti", self)
+        self.redo_action.setShortcut(QKeySequence("Ctrl+Y"))
+        self.redo_action.triggered.connect(self.redo)
+        edit_menu.addAction(self.redo_action)
 
         # Central widget and layout
         main_widget = QWidget()
@@ -94,11 +144,52 @@ class MainWindow(QMainWindow):
 
         # Connect to header press for drag restriction
         self.table.verticalHeader().sectionPressed.connect(self.start_drag_from_header)
+        self.table.selectionModel().selectionChanged.connect(self.update_edit_actions)
+        self.update_edit_actions()
 
         layout.addWidget(self.table)
 
         self._suppress_signal = False
         self._drag_allowed = False
+
+    def update_edit_actions(self):
+        selection = self.table.selectionModel().selectedRows()
+        has_selection = bool(selection)
+        self.copy_action.setEnabled(has_selection)
+        self.cut_action.setEnabled(has_selection)
+        self.paste_action.setEnabled(has_selection and (bool(self._cut_fields)) or bool(self._copied_fields))
+        self.assign_group_action.setEnabled(has_selection)
+        self.toggle_mandatory_action.setEnabled(has_selection)
+        self.delete_action.setEnabled(has_selection)
+        self.undo_action.setEnabled(bool(self.undo_stack))
+        self.redo_action.setEnabled(bool(self.redo_stack))
+
+    def trigger_copy(self):
+        indexes = self.table.selectionModel().selectedRows()
+        if indexes:
+            self.copy_selected_rows(indexes)
+            self.update_edit_actions()
+
+    def trigger_cut(self):
+        indexes = self.table.selectionModel().selectedRows()
+        if indexes:
+            self._copied_fields = []
+            self.cut_selected_rows(indexes)
+
+    def trigger_paste(self):
+        indexes = self.table.selectionModel().selectedRows()
+        if indexes and (bool(self._cut_fields) or bool(self._copied_fields)):
+            if bool(self._cut_fields):
+                self.save_snapshot()
+                row = indexes[0].row() + 1
+                for i, field in enumerate(self._cut_fields):
+                    self.insert_existing_field_at(row + i, field.copy())
+                self._cut_fields = []
+                self._cut_origin_rows = []
+            else:
+                row = indexes[0].row() + 1
+                self.paste_fields_at(row)
+        self.update_edit_actions()
 
     def insert_existing_field_at(self, row, field: FormField):
         self.document.add_field(field=field, position=row)
@@ -109,10 +200,10 @@ class MainWindow(QMainWindow):
             first_row = indexes[0].row()
             if 0 <= first_row < len(self.document.fields):
                 self._copied_group = self.document.fields[first_row].group
-                print(f"[COPY GROUP] Gruppo copiato: {self._copied_group}")
 
     def paste_group(self, indexes):
         if self._copied_group is not None:
+            self.save_snapshot()
             rows = [index.row() for index in indexes]
             self.document.update_group(rows, self._copied_group)
             self.refresh_table()
@@ -125,12 +216,14 @@ class MainWindow(QMainWindow):
                 print(f"[COPY DEFAULT] Default data copiato: {self._copied_default_data}")
 
     def paste_default_data(self, indexes):
+        self.save_snapshot()
         if self._copied_default_data is not None:
             rows = [index.row() for index in indexes]
             self.document.update_default_data(rows, self._copied_default_data)
             self.refresh_table()
 
     def delete_rows(self, indexes):
+        self.save_snapshot()
         rows = sorted([index.row() for index in indexes], reverse=True)
         for row in rows:
             self.document.remove_field(row)
@@ -140,10 +233,24 @@ class MainWindow(QMainWindow):
         rows = [i.row() for i in indexes]
         self._copied_fields = [self.document.fields[i].copy() for i in rows]
 
+    def cut_selected_rows(self, indexes):
+        self.save_snapshot()
+        if self._cut_fields and self._cut_origin_rows:
+            for i, field in zip(self._cut_origin_rows, self._cut_fields):
+                self.document.add_field(field.copy(), i)
+            self._cut_fields = []
+            self._cut_origin_rows = []
+
+        rows = sorted(set(index.row() for index in indexes))
+        self._cut_origin_rows = rows
+        self._cut_fields = [self.document.fields[i].copy() for i in rows]
+        self.delete_rows(indexes)
+
     def start_drag_from_header(self, index):
         self._drag_allowed = True
 
     def paste_fields_at(self, row: int):
+        self.save_snapshot()
         for i, field in enumerate(self._copied_fields):
             self.insert_existing_field_at(row + i, field.copy())
 
@@ -195,6 +302,16 @@ class MainWindow(QMainWindow):
             self.table.setCellWidget(i, 4, container)
 
             self.table.setItem(i, 5, QTableWidgetItem(str(field.default_data)))
+
+            selection = self.table.selectionModel().selectedRows()
+            has_selection = bool(selection)
+
+            self.copy_action.setEnabled(has_selection)
+            self.cut_action.setEnabled(has_selection)
+            self.paste_action.setEnabled(has_selection and bool(self._cut_fields))
+            self.assign_group_action.setEnabled(has_selection)
+            self.toggle_mandatory_action.setEnabled(has_selection)
+
         self._suppress_signal = False
 
     def sync_table_to_model(self):
@@ -221,12 +338,10 @@ class MainWindow(QMainWindow):
         print(self.document)
 
     def update_type(self, row, value):
-        print("update type called")
         if 0 <= row < len(self.document.fields):
             self.document.fields[row].data_type = value
 
     def update_mandatory(self, row):
-        print("update mandatory called")
         if 0 <= row < len(self.document.fields):
             container = self.table.cellWidget(row, 4)
             checkbox = container.findChild(QCheckBox)
@@ -243,6 +358,11 @@ class MainWindow(QMainWindow):
                         new_html = dialog.get_html()
                         self.document.fields[row].description = new_html
                         self.table.item(row, 2).setText(new_html)
+
+    def swap_rows(self, row1, row2):
+        self.save_snapshot()
+        self.document.swap_field(row1, row2)
+        self.refresh_table()
 
     def open_context_menu(self, position):
         indexes = self.table.selectionModel().selectedRows()
@@ -328,6 +448,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QInputDialog
         group_name, ok = QInputDialog.getText(self, "Assegna gruppo", "Gruppo...")
         if ok and group_name:
+            self.save_snapshot()
             row_indices = [index.row() for index in indexes]
             self.document.assign_group(row_indices, group_name)
             self.refresh_table()
@@ -364,10 +485,41 @@ class MainWindow(QMainWindow):
         )
 
         if ok:
+            self.save_snapshot()
             new_field = FormField.create_empty()
             self.document.add_field(field=new_field, position=index)
             self.refresh_table()
 
     def insert_field_b(self):
+        self.save_snapshot()
         self.document.add_field(FormField.create_empty(), len(self.document))
         self.refresh_table()
+
+    def save_snapshot(self):
+        self.undo_stack.append(self.document.copy())
+        self.redo_stack.clear()
+
+    def set_document_snapshot(self, snapshot):
+        self._suppress_signal = True
+        self.table.blockSignals(True)  # blocca TUTTI i segnali widget → slot
+
+        self.document = snapshot
+        self.refresh_table()
+
+        self.table.blockSignals(False)
+        self._suppress_signal = False
+
+    def undo(self):
+        if not self.undo_stack:
+            return
+        self.redo_stack.append(self.document.copy())
+        # print("miao")
+        snapshot = self.undo_stack.pop()
+        self.set_document_snapshot(snapshot)
+
+    def redo(self):
+        if not self.redo_stack:
+            return
+        self.undo_stack.append(self.document.copy())
+        snapshot = self.redo_stack.pop()
+        self.set_document_snapshot(snapshot)
